@@ -59,7 +59,7 @@ def run(*args):
 
 
 _HEADER_ = '''
-<h2><b>Official Gradio Demo</b></h2><h2><a href='https://github.com/ToTheBeginning/PuLID' target='_blank'><b>PuLID: Pure and Lightning ID Customization via Contrastive Alignment</b></a></h2>
+<h2><b>Official Gradio Demo Seras</b></h2><h2><a href='https://github.com/ToTheBeginning/PuLID' target='_blank'><b>PuLID: Pure and Lightning ID Customization via Contrastive Alignment</b></a></h2>
 
 **PuLID** is a tuning-free ID customization approach. PuLID maintains high ID fidelity while effectively reducing interference with the original model’s behavior.
 
@@ -221,4 +221,4 @@ with gr.Blocks(title="PuLID", css=".gr-box {border-color: #8136e2}") as demo:
 
 
 demo.queue(max_size=3)
-demo.launch(server_name='0.0.0.0')
+demo.launch(server_name='0.0.0.0', share=True)

@@ -12,7 +12,7 @@ try:
     from timm.models.layers import trunc_normal_
 except:
     from timm.layers import trunc_normal_
-    
+
 from .rope import VisionRotaryEmbedding, VisionRotaryEmbeddingFast
 from .utils import to_2tuple
 
@@ -170,7 +170,6 @@ class Attention(nn.Module):
         self.scale = self.head_dim ** -0.5
         self.logit_scale_max = logit_scale_max
 
-        # keeping in_proj in this form (instead of nn.Linear) to match weight scheme of original
         self.in_proj_weight = nn.Parameter(torch.randn((dim * 3, dim)) * self.scale)
         if qkv_bias:
             self.in_proj_bias = nn.Parameter(torch.zeros(dim * 3))
@@ -195,7 +194,7 @@ class Attention(nn.Module):
     def forward(self, x, attn_mask: Optional[torch.Tensor] = None):
         L, N, C = x.shape
         q, k, v = F.linear(x, self.in_proj_weight, self.in_proj_bias).chunk(3, dim=-1)
-        if self.xattn:
+        if self.xattn and xops and x.is_cuda:
             q = q.contiguous().view(L, N, self.num_heads, -1).transpose(0, 1)
             k = k.contiguous().view(L, N, self.num_heads, -1).transpose(0, 1)
             v = v.contiguous().view(L, N, self.num_heads, -1).transpose(0, 1)
@@ -240,6 +239,7 @@ class Attention(nn.Module):
         x = self.out_drop(x)
         return x
 
+
 class CustomAttention(nn.Module):
     def __init__(
             self,
@@ -262,7 +262,6 @@ class CustomAttention(nn.Module):
         self.scale = self.head_dim ** -0.5
         self.logit_scale_max = logit_scale_max
 
-        # keeping in_proj in this form (instead of nn.Linear) to match weight scheme of original
         self.in_proj_weight = nn.Parameter(torch.randn((dim * 3, dim)) * self.scale)
         if qkv_bias:
             self.in_proj_bias = nn.Parameter(torch.zeros(dim * 3))
@@ -288,8 +287,7 @@ class CustomAttention(nn.Module):
         N_q, B_q, C_q = q.shape
         N_k, B_k, C_k = k.shape
         N_v, B_v, C_v = v.shape
-        if self.xattn:
-            # B, N, C -> B, N, num_heads, C
+        if self.xattn and xops and query.is_cuda:
             q = q.permute(1, 0, 2).reshape(B_q, N_q, self.num_heads, -1)
             k = k.permute(1, 0, 2).reshape(B_k, N_k, self.num_heads, -1)
             v = v.permute(1, 0, 2).reshape(B_v, N_v, self.num_heads, -1)
@@ -301,13 +299,11 @@ class CustomAttention(nn.Module):
                 attn_bias=xops.LowerTriangularMask() if attn_mask is not None else None
                 )
         else:
-            # B*H, L, C
             q = q.contiguous().view(N_q, B_q * self.num_heads, -1).transpose(0, 1)
             k = k.contiguous().view(N_k, B_k * self.num_heads, -1).transpose(0, 1)
             v = v.contiguous().view(N_v, B_v * self.num_heads, -1).transpose(0, 1)
 
             if self.logit_scale is not None:
-                # B*H, N_q, N_k
                 attn = torch.bmm(F.normalize(q, dim=-1), F.normalize(k, dim=-1).transpose(-1, -2))
                 logit_scale = torch.clamp(self.logit_scale, max=self.logit_scale_max).exp()
                 attn = attn.view(B_q, self.num_heads, N_q, N_k) * logit_scale
@@ -327,7 +323,7 @@ class CustomAttention(nn.Module):
             attn = self.attn_drop(attn)
 
             x = torch.bmm(attn, v)
-            
+
         if self.head_scale is not None:
             x = x.view(B_q, self.num_heads, N_q, C_q) * self.head_scale
             x = x.view(-1, N_q, C_q)
@@ -335,6 +331,7 @@ class CustomAttention(nn.Module):
         x = self.out_proj(x)
         x = self.out_drop(x)
         return x
+
 
 class CustomResidualAttentionBlock(nn.Module):
     def __init__(
@@ -427,7 +424,7 @@ class CustomTransformer(nn.Module):
         ])
 
     def get_cast_dtype(self) -> torch.dtype:
-        return self.resblocks[0].mlp.c_fc.weight.dtype 
+        return self.resblocks[0].mlp.c_fc.weight.dtype
 
     def forward(self, q: torch.Tensor, k: torch.Tensor = None, v: torch.Tensor = None, attn_mask: Optional[torch.Tensor] = None):
         if k is None and v is None:
@@ -548,7 +545,7 @@ class VisionTransformer(nn.Module):
         # setting a patch_dropout of 0. would mean it is disabled and this function would be the identity fn
         self.patch_dropout = PatchDropout(patch_dropout) if patch_dropout > 0. else nn.Identity()
         self.ln_pre = norm_layer(width)
-        
+
         self.transformer = Transformer(
             width,
             layers,
@@ -567,7 +564,7 @@ class VisionTransformer(nn.Module):
     def lock(self, unlocked_groups=0, freeze_bn_stats=False):
         for param in self.parameters():
             param.requires_grad = False
-        
+
         if unlocked_groups != 0:
             groups = [
                 [
@@ -671,7 +668,7 @@ class TextTransformer(nn.Module):
             norm_layer=norm_layer,
             xattn=xattn
         )
-        
+
         self.xattn = xattn
         self.ln_final = norm_layer(width)
         self.text_projection = nn.Parameter(torch.empty(width, output_dim))
@@ -702,7 +699,7 @@ class TextTransformer(nn.Module):
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable=True):
         self.transformer.grad_checkpointing = enable
-    
+
     @torch.jit.ignore
     def no_weight_decay(self):
         # return {'positional_embedding', 'token_embedding'}

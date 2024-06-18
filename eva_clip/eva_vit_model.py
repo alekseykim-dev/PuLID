@@ -91,7 +91,6 @@ class SwiGLU(nn.Module):
         self.act = act_layer()
         self.ffn_ln = norm_layer(hidden_features) if subln else nn.Identity()
         self.w3 = nn.Linear(hidden_features, out_features)
-        
         self.drop = nn.Dropout(drop)
 
     def forward(self, x):
@@ -162,7 +161,6 @@ class Attention(nn.Module):
 
         self.attn_drop = nn.Dropout(attn_drop)
         self.inner_attn_ln = norm_layer(all_head_dim) if subln else nn.Identity()
-        # self.proj = nn.Linear(all_head_dim, all_head_dim)
         self.proj = nn.Linear(all_head_dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
         self.xattn = xattn
@@ -181,7 +179,6 @@ class Attention(nn.Module):
             k = k.reshape(B, N, self.num_heads, -1).permute(0, 2, 1, 3)  
             v = v.reshape(B, N, self.num_heads, -1).permute(0, 2, 1, 3) 
         else: 
-
             qkv_bias = None
             if self.q_bias is not None:
                 qkv_bias = torch.cat((self.q_bias, torch.zeros_like(self.v_bias, requires_grad=False), self.v_bias))
@@ -191,7 +188,6 @@ class Attention(nn.Module):
             q, k, v = qkv[0], qkv[1], qkv[2]
 
         if self.rope:
-            # slightly fast impl
             q_t = q[:, :, 1:, :]
             ro_q_t = self.rope(q_t)
             q = torch.cat((q[:, :, :1, :], ro_q_t), -2).type_as(v)
@@ -200,7 +196,7 @@ class Attention(nn.Module):
             ro_k_t = self.rope(k_t)
             k = torch.cat((k[:, :, :1, :], ro_k_t), -2).type_as(v)
 
-        if self.xattn:
+        if self.xattn and XFORMERS_IS_AVAILBLE and x.is_cuda:
             q = q.permute(0, 2, 1, 3)   # B, num_heads, N, C -> B, N, num_heads, C
             k = k.permute(0, 2, 1, 3)
             v = v.permute(0, 2, 1, 3)
@@ -241,6 +237,7 @@ class Attention(nn.Module):
             x = self.proj(x)
             x = self.proj_drop(x)
         return x
+
 
 
 class Block(nn.Module):

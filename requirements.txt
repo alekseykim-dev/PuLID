@@ -11,6 +11,6 @@ ftfy
 basicsr
 facexlib
 insightface
-onnxruntime-gpu
+onnxruntime
 accelerate
 spaces==0.19.4

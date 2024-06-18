@@ -35,13 +35,13 @@ MODEL_CACHE = "models"
 class PuLIDPipeline:
     def __init__(self, *args, **kwargs):
         super().__init__()
-        self.device = 'cuda'
+        self.device = torch.device('cpu')  # Ensure the model uses CPU
         sdxl_base_repo = 'stabilityai/stable-diffusion-xl-base-1.0'
         sdxl_lightning_repo = 'ByteDance/SDXL-Lightning'
         self.sdxl_base_repo = sdxl_base_repo
 
         # load base model
-        unet = UNet2DConditionModel.from_config(sdxl_base_repo, subfolder='unet').to(self.device, torch.float16)
+        unet = UNet2DConditionModel.from_config(sdxl_base_repo, subfolder='unet').to(self.device, torch.float32)
         try:
             unet_filepath = hf_hub_download(
                 sdxl_lightning_repo,
@@ -58,7 +58,7 @@ class PuLIDPipeline:
         unet.load_state_dict(load_file(unet_filepath))
         self.hack_unet_attn_layers(unet)
         self.pipe = StableDiffusionXLPipeline.from_pretrained(
-            sdxl_base_repo, unet=unet, torch_dtype=torch.float16, variant="fp16"
+            sdxl_base_repo, unet=unet, torch_dtype=torch.float32
         ).to(self.device)
         self.pipe.watermark = None
 
@@ -101,7 +101,7 @@ class PuLIDPipeline:
             local_dir_use_symlinks=False,
         )
         self.app = FaceAnalysis(
-            name='antelopev2', root='.', providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+            name='antelopev2', root='.', providers=['CPUExecutionProvider']  
         )
         self.app.prepare(ctx_id=0, det_size=(640, 640))
         self.handler_ante = insightface.model_zoo.get_model(f'{MODEL_CACHE}/antelopev2/glintr100.onnx')
